@@ -1,4 +1,4 @@
-# Báo cáo Lab Day 1 — Le Anh Duy — 2A202602723
+# Báo cáo Lab Day 1 — Lê Anh Duy — 2A202602723
 
 ## 1. Thiết lập
 
@@ -54,7 +54,8 @@ Chọn lr baseline (`lr-sgdm-*`): 0.003 → 0.665, 0.01 → 0.761, 0.03 → 0.81
 - **Giải thích:** Adam lên nhanh ngay từ đầu (F1 epoch 5 / 10: 0.811 / 0.848, so với 0.782 / 0.805 của SGD+momentum) vì bước cập nhật được chia theo √v̂ của từng tham số, nên các tham số có gradient nhỏ vẫn đi được bước đáng kể. Momentum tích luỹ vận tốc, tương đương lr hiệu dụng lớn hơn khoảng 1/(1−μ), nên SGD thuần cần lr lớn hơn mà vẫn kém hơn. Adam hơn trung bình baseline 0.014, **chưa vượt 2σ** (so cùng seed với `base-s1` là +0.029). SGD thuần thấp hơn trung bình 0.037, **vượt 2σ**. Adam và AdamW chênh 0.003, nằm trong nhiễu.
 
 ### 3.3 Hyper-parameter
-Ảnh: `figures/compare_batch.png`, `figures/compare_hparam.png`.
+- **Dự đoán:** batch 2048 cùng lr sẽ kém vì chỉ còn ¼ số bước, và lr ×4 sẽ bù lại; batch 128 tốt hơn một chút nhưng chậm hơn khoảng 4 lần. Vì baseline chưa khớp đủ, M-wide/M-deep/cosine sẽ giúp, còn weight decay sẽ làm tệ hơn.
+- **Kết quả** (`figures/compare_batch.png`, `figures/compare_hparam.png`):
 
 | exp_id | thay đổi | val F1 | Δ so với TB baseline | s/epoch |
 |---|---|---|---|---|
@@ -66,7 +67,7 @@ Chọn lr baseline (`lr-sgdm-*`): 0.003 → 0.665, 0.01 → 0.761, 0.03 → 0.81
 | `hp-wd5e-4` | weight decay 5e-4 | 0.750 | −0.104 (vượt 2σ) | 1.34 |
 | `hp-cosine` | cosine lr → 0 | 0.866 | +0.013 | 1.30 |
 
-- Cùng 20 epoch, batch 2048 chỉ có ¼ số bước cập nhật nên chưa học xong. Tăng lr ×4 theo quy tắc tăng lr theo lô bù được gần hết, vì tổng quãng đường cập nhật tương đương. Batch 128 có gấp 4 lần số bước nhưng chậm gấp 4 lần mỗi epoch (thời gian tỉ lệ với số bước vì mạng nhỏ) và không tốt hơn ngoài nhiễu.
+- **Giải thích:** cùng 20 epoch, batch 2048 chỉ có ¼ số bước cập nhật nên chưa học xong. Tăng lr ×4 theo quy tắc tăng lr theo lô bù được gần hết, vì tổng quãng đường cập nhật tương đương. Batch 128 có gấp 4 lần số bước nhưng chậm gấp 4 lần mỗi epoch (thời gian tỉ lệ với số bước vì mạng nhỏ) và không tốt hơn ngoài nhiễu.
 - M-wide, M-deep và cosine đều tốt hơn (so cùng seed với `base-s1`: +0.035 / +0.026 / +0.027; train loss thấp hơn), nhất quán với việc baseline chưa khớp đủ. Tuy nhiên chưa cái nào vượt 2σ so với trung bình. Weight decay làm mô hình vốn đang thiếu khớp càng thiếu khớp (train loss 0.323 so với 0.216).
 
 ### 3.4 Dropout
@@ -75,12 +76,15 @@ Chọn lr baseline (`lr-sgdm-*`): 0.003 → 0.665, 0.01 → 0.761, 0.03 → 0.81
 - **Giải thích:** dropout giảm năng lực hiệu dụng và làm gradient nhiễu hơn. Gap nhỏ đi là vì train loss tăng lên chứ val loss không giảm. Mô hình này **không** quá khớp, nên dropout là thuốc sai bệnh. Lớp hiếm chịu thiệt nhất: macro-F1 giảm nhanh hơn accuracy.
 
 ### 3.5 Gradient clipping
+- **Dự đoán:** ở lr bình thường clipping kích hoạt nhưng không đổi kết quả; ở lr ×10, bản không clip sẽ dao động hoặc NaN, còn clipping giữ được huấn luyện ổn định.
 - **Chọn c:** grad norm trung bình theo epoch của `base-s1` dao động 0.53–0.59. Lấy c = 0.57 (trung vị) để clipping thực sự kích hoạt.
 - **Ở lr bình thường** (`clip-c`): cắt 34% số bước ở epoch 1 và khoảng 65% về sau, nhưng val F1 0.854 ≈ trung bình baseline (trong nhiễu). Khi huấn luyện đã ổn định, clipping chỉ tương đương với giảm nhẹ lr.
 - **Ở lr cao** (lr 1.0 = ×10): bản không clip (`noclip-lrx10`) **không phân kỳ** nhưng dao động. Gai grad norm lên 9.7 ở epoch 1 và 1.22 ở epoch cuối; val loss tăng ngược 0.333 → 0.371 ở epoch cuối; F1 0.773. Bản có clip (`clip-c-lrx10`) có gai lớn nhất (đo trước khi cắt) là 3.26 ở epoch 1 và ≤ 0.83 về sau; F1 0.805, cao hơn bản không clip 0.031 (≈ 2σ, mới có 1 seed nên là bằng chứng yếu).
 - **Bất ngờ:** ở lr 1.0, grad norm trung bình chỉ khoảng 0.25, thấp hơn ở lr 0.1. Vì vậy c = 0.57 hầu như chỉ kích hoạt ở epoch 1 (khoảng 2% số bước). Lợi ích đến từ việc chặn các gai đầu tiên, ngăn mô hình bị đẩy vào vùng xấu ngay từ đầu. Ảnh: `figures/compare_clipping.png`.
 
 ### 3.6 Mixed precision
+- **Dự đoán:** mạng rất nhỏ nên thời gian bị chi phối bởi chi phí gọi kernel → FP16/BF16 không nhanh hơn; độ chính xác ngang FP32; bộ nhớ gần như không đổi vì phần lớn là dữ liệu đặt sẵn trên GPU.
+- **Kết quả:**
 
 | | s/epoch | peak mem (MB) | val macro-F1 |
 |---|---|---|---|
@@ -88,11 +92,13 @@ Chọn lr baseline (`lr-sgdm-*`): 0.003 → 0.665, 0.01 → 0.761, 0.03 → 0.81
 | FP16 + GradScaler (`amp-fp16`) | 1.78 | 176 | 0.848 |
 | BF16 (`amp-bf16`) | 1.53 | 176 | 0.847 |
 
-- Mixed precision **chậm hơn** trên T4 (FP16 +38%, BF16 +18%). GEMM quá nhỏ (512×54×256) nên Tensor Core không có lợi; chi phí autocast và GradScaler (`scale`, `unscale_`, `step`, `update` mỗi bước) lại thêm vào. T4 (Turing) không có phần cứng BF16 gốc.
+- **Giải thích:** mixed precision **chậm hơn** trên T4 (FP16 +38%, BF16 +18%). GEMM quá nhỏ (512×54×256) nên Tensor Core không có lợi; chi phí autocast và GradScaler (`scale`, `unscale_`, `step`, `update` mỗi bước) lại thêm vào. T4 (Turing) không có phần cứng BF16 gốc.
 - Bộ nhớ không đổi vì gần như toàn bộ là dữ liệu FP32 đặt sẵn trên GPU; activation của một lô chưa tới 1 MB.
 - Độ chính xác ngang FP32 (trong nhiễu): tham số và loss vẫn ở FP32. FP16 cần nhân loss với hệ số s vì khoảng biểu diễn hẹp (min normal khoảng 6e-5, gradient nhỏ dễ thành 0); BF16 có 8 bit số mũ như FP32 nên không cần.
 
 ### 3.7 Khởi tạo tham số
+- **Dự đoán:** `zeros` hỏng (đối xứng, ReLU(0) = 0, chỉ bias lớp cuối học được) → đoán lớp đa số; `normal 0.01` làm kích hoạt tắt dần nên học chậm lúc đầu; xavier/he/default cho kết quả cuối gần như nhau vì mạng chỉ có 3 lớp.
+- **Kết quả:**
 
 | init | std ReLU1 / ReLU2 / logits (bước 0) | loss bước 0 | val F1 |
 |---|---|---|---|
@@ -104,7 +110,7 @@ Chọn lr baseline (`lr-sgdm-*`): 0.003 → 0.665, 0.01 → 0.761, 0.03 → 0.81
 
 ![](figures/compare_init_activations.png)
 
-- **zeros:** mọi nơ-ron trong cùng lớp giống hệt nhau, ReLU(0) = 0, và W lớp ra bằng 0 nên các lớp ẩn không nhận gradient. Chỉ bias lớp ra học được, và nó học đúng tỉ lệ lớp. Bằng chứng: val loss đứng ở **1.205 = entropy của phân bố nhãn**; acc 0.4876 và F1 0.094 đúng bằng mốc "đoán lớp đa số".
+- **Giải thích — zeros:** mọi nơ-ron trong cùng lớp giống hệt nhau, ReLU(0) = 0, và W lớp ra bằng 0 nên các lớp ẩn không nhận gradient. Chỉ bias lớp ra học được, và nó học đúng tỉ lệ lớp. Bằng chứng: val loss đứng ở **1.205 = entropy của phân bố nhãn**; acc 0.4876 và F1 0.094 đúng bằng mốc "đoán lớp đa số".
 - **normal 0.01:** mỗi lớp nhân phương sai với khoảng n·0.01² ≪ 1, nên kích hoạt tắt dần (ở mạng 20 lớp, về 0 sau khoảng 12 lớp). Ở mạng 3 lớp, nó chỉ học chậm hơn lúc đầu (F1 epoch 5: 0.752 so với 0.782).
 - Với mạng 20 lớp, He giữ std ổn định. Xavier giảm dần vì với lớp 256→256, Var = 2/(n_in + n_out) chỉ bằng một nửa mức 2/n_in mà ReLU cần. M-base chỉ có 3 lớp nên normal, xavier và default đều nằm trong nhiễu so với He.
 
@@ -119,7 +125,7 @@ Chọn lr baseline (`lr-sgdm-*`): 0.003 → 0.665, 0.01 → 0.761, 0.03 → 0.81
   - optimizer/lr lấy từ lần chạy có val F1 cao nhất (`opt-adam-lr3e-3`);
   - M-wide, cosine và dropout chỉ được thêm nếu vượt trung bình baseline hơn 2σ, và không cái nào đạt;
   - 40 epoch thay cho 20 vì mọi lần chạy 20 epoch đều có best epoch ở gần cuối.
-- **Hai seed của cấu hình cuối:** val F1 `final-s1` 0.889 và `final-s2` 0.892, tức 0.8907 ± 0.0018, cao hơn baseline 0.8535 ± 0.0126 là **+0.037 > 2σ**. Trên eval, `final-s1` hơn `base-s1` 0.050. Vì `base-s1` là seed baseline thấp nhất, con số 0.050 phóng đại phần cải thiện; ước lượng công bằng hơn là khoảng +0.037 theo val. Mình chỉ chấm eval cho seed nộp, nên không có σ trên eval.
+- **Hai seed của cấu hình cuối:** val F1 `final-s1` 0.889 và `final-s2` 0.892, tức 0.8907 ± 0.0018, cao hơn baseline 0.8535 ± 0.0126 là **+0.037 > 2σ**. Trên eval, `final-s1` hơn `base-s1` 0.050. Vì `base-s1` là seed baseline thấp nhất, con số 0.050 phóng đại phần cải thiện; ước lượng công bằng hơn là khoảng +0.037 theo val. Eval chỉ được chấm cho seed nộp nên không có σ trên eval.
 - **Val và eval gần nhau:** lệch +0.002 (baseline) và +0.0015 (final), nên val là ước lượng đáng tin của eval.
 
 ### 4.1 Phân tích lỗi theo lớp (`eval_result.json`, `final-s1`)
@@ -145,39 +151,28 @@ Chọn lr baseline (`lr-sgdm-*`): 0.003 → 0.665, 0.01 → 0.761, 0.03 → 0.81
 
 ## 5. Trả lời các câu hỏi dẫn dắt
 
-1. **Bộ tối ưu nào thắng khi chỉnh lr công bằng?** Adam (0.868 ở lr 3e-3) ≈ AdamW (0.865) > SGD+momentum (0.839 ở lr 0.1) > SGD (0.816 ở lr 0.3). Khoảng cách giữa Adam và SGD+momentum chưa vượt 2σ so với trung bình baseline. Khi không chỉnh lr, kết luận có thể đảo ngược: Adam ở lr 3e-4 (0.788) thua SGD+momentum ở lr 0.1, và SGD ở lr 0.1 (0.755) thua SGD+momentum ở cùng lr. "Adam thắng" chỉ có nghĩa khi đặt cạnh lr tốt nhất của từng bộ.
-2. **Dropout có giúp khi mô hình chưa quá khớp không?** Không. Ở đây dropout chỉ thu hẹp gap bằng cách làm train loss tăng, còn F1 giảm theo q. Chỉ nên dùng khi train loss thấp hơn hẳn val loss và val loss bắt đầu tăng (tức là quá khớp), ví dụ với mạng lớn hơn nhiều hoặc dữ liệu ít.
-3. **Gradient clipping giải quyết vấn đề gì?** Nó chặn các bước cập nhật quá lớn do gai gradient. Bằng chứng: ở lr 1.0, bản không clip có gai 9.7 và val loss tăng ngược ở cuối, còn bản có clip chặn gai đầu (3.26 trước khi cắt) và đạt F1 cao hơn 0.031. Ở lr bình thường, clipping không giúp gì vì không có gai cần chặn.
-4. **Mixed precision có nhanh hơn không?** Không. Trên T4 với mạng 48K tham số, FP16 và BF16 chậm hơn 18–38%: thời gian bị chi phối bởi chi phí gọi kernel và ép kiểu, không phải phép nhân ma trận. Bộ nhớ cũng không giảm vì phần lớn là dữ liệu.
-5. **Vì sao khởi tạo 0 hỏng? He khác Xavier ở đâu?** Khởi tạo 0 làm mọi nơ-ron đối xứng và ReLU(0) = 0, nên gradient của các lớp ẩn bằng 0; chỉ bias lớp ra học được, dẫn đến đoán lớp đa số (`init-zeros`). He dùng Var = 2/n_in để bù việc ReLU bỏ một nửa phương sai; Xavier dùng 2/(n_in + n_out), thiết kế cho hàm kích hoạt đối xứng. Với ReLU, Xavier làm std kích hoạt giảm dần theo độ sâu (thấy rõ ở mạng 20 lớp). Sự khác biệt chỉ quan trọng ở mạng sâu; với mạng 3 lớp thì không đáng kể.
+1. **Bộ tối ưu nào thắng khi chỉnh lr công bằng?** Adam (0.868) ≈ AdamW (0.865) > SGD+momentum (0.839) > SGD (0.816), mỗi bộ ở lr tốt nhất của nó; Adam so với SGD+momentum chưa vượt 2σ. Khi không chỉnh lr, kết luận có thể đảo ngược: Adam ở lr 3e-4 (0.788) thua SGD+momentum ở lr 0.1.
+2. **Dropout có giúp khi mô hình chưa quá khớp không?** Không. Dropout chỉ thu hẹp gap vì làm train loss tăng, còn F1 giảm theo q (mục 3.4). Chỉ nên dùng khi train loss thấp hơn hẳn val loss và val loss bắt đầu tăng.
+3. **Gradient clipping giải quyết vấn đề gì?** Nó chặn bước cập nhật quá lớn do gai gradient. Ở lr 1.0, bản không clip có gai 9.7 và val loss tăng ngược ở cuối; bản có clip chặn gai đầu và đạt F1 cao hơn 0.031 (mục 3.5). Ở lr bình thường, clipping không giúp gì.
+4. **Mixed precision có nhanh hơn không?** Không. Với mạng 48K tham số trên T4, thời gian bị chi phối bởi chi phí gọi kernel và ép kiểu, nên FP16/BF16 chậm hơn 18–38%; bộ nhớ không giảm vì phần lớn là dữ liệu.
+5. **Vì sao khởi tạo 0 hỏng? He khác Xavier ở đâu?** Khởi tạo 0 làm các nơ-ron đối xứng và ReLU(0) = 0, nên lớp ẩn không nhận gradient; chỉ bias lớp ra học được tỉ lệ lớp (val loss = entropy nhãn). He dùng Var = 2/n_in để bù việc ReLU bỏ một nửa phương sai; Xavier dùng 2/(n_in + n_out), vốn cho hàm kích hoạt đối xứng, nên với ReLU kích hoạt giảm dần theo độ sâu. Khác biệt chỉ quan trọng ở mạng sâu (thấy rõ ở mạng 20 lớp), không đáng kể ở mạng 3 lớp.
 6. **Loss không giảm sau 2 000 bước — 3 phép kiểm tra đầu tiên:**
-   1. **Loss bước 0 có ≈ ln C không?** Nếu cao hơn nhiều, khởi tạo hoặc chuẩn hoá đầu vào có vấn đề. Ví dụ ở đây: 2.27 với He, 1.946 với normal.
-   2. **Có quá khớp được một lô nhỏ (20 mẫu) với mọi chính quy hoá tắt không?** Nếu không, gần như chắc chắn là lỗi code: nhãn lệch, softmax hai lần, quên `zero_grad`, tham số không nằm trong optimizer. Ở đây loss về 8.6e-7.
-   3. **Gradient có chảy tới mọi tham số không, và grad norm có hợp lý không?** In grad norm của từng lớp: bằng 0 nghĩa là gradient không chảy (như `init-zeros`: grad norm khoảng 0.03, loss đứng ở entropy nhãn); quá nhỏ nghĩa là lr quá thấp (như `lr-sgdm-0.003`: sau 20 epoch F1 vẫn chỉ 0.665); có gai lớn thì nên giảm lr hoặc clip.
+   1. **Loss bước 0 có ≈ ln C không?** Nếu cao hơn nhiều, nghi khởi tạo hoặc chuẩn hoá đầu vào (ở đây 2.27 với He, 1.946 với normal).
+   2. **Có quá khớp được 20 mẫu khi tắt mọi chính quy hoá không?** Nếu không, gần như chắc chắn là lỗi code: nhãn lệch, softmax hai lần, quên `zero_grad`, tham số không nằm trong optimizer (ở đây loss về 8.6e-7).
+   3. **Gradient có chảy tới mọi tham số, và grad norm có hợp lý không?** Bằng 0 nghĩa là gradient không chảy (`init-zeros`: loss đứng ở entropy nhãn); học quá chậm nghĩa là lr quá thấp (`lr-sgdm-0.003`: F1 0.665 sau 20 epoch); có gai lớn thì giảm lr hoặc clip.
 
-   Ba phép này rẻ, mỗi phép chạy dưới một phút, và tách được lỗi dữ liệu/code khỏi lỗi tối ưu hoá trước khi tốn thời gian chỉnh hyper-parameter.
+   Ba phép này đều chạy dưới một phút và tách được lỗi dữ liệu/code khỏi lỗi tối ưu hoá trước khi tốn thời gian chỉnh hyper-parameter.
 
 ## 6. Hạn chế và điều bất ngờ
 
-- **Khác dự đoán:**
-  - MSE với lr ×10 tệ hơn chứ không tốt hơn.
-  - lr ×10 không làm huấn luyện phân kỳ.
-  - Ở lr cao, grad norm lại nhỏ hơn, nên c chọn theo baseline gần như không kích hoạt.
-  - Mixed precision chậm hơn (dự đoán là không nhanh hơn, nhưng không nghĩ sẽ chậm tới 38%).
+- **Khác dự đoán:** MSE với lr ×10 tệ hơn chứ không tốt hơn; lr ×10 không làm huấn luyện phân kỳ, và ở lr cao grad norm lại nhỏ hơn nên c chọn theo baseline gần như không kích hoạt; mixed precision chậm hơn tới 38%.
 - **Có thể làm kết luận sai:**
-  - Chỉ có 3 seed baseline, và seed 1 (dùng cho mọi thí nghiệm) là seed thấp nhất. σ vì thế là ước lượng thô, và các chênh lệch "cùng seed" có thể phóng đại.
-  - Mỗi thí nghiệm chỉ chạy 1 seed.
-  - lr tốt nhất của **mọi** bộ tối ưu đều ở biên trên của lưới, nên có thể chưa phải lr tối ưu.
-  - Mọi cấu hình 20 epoch đều chưa hội tụ, nên so sánh có phần thiên về "học nhanh" hơn là "điểm hội tụ tốt".
-  - Cấu hình cuối kết hợp kiểu tham lam và chưa thử kết hợp M-wide/cosine với Adam.
-  - Thí nghiệm `hp-bs2048-lrx4` đổi 2 yếu tố cùng lúc.
-  - Phần "dự đoán" trong báo cáo và notebook được viết dựa trên lý thuyết, sau khi pipeline đã chạy một lượt.
-- **Nếu có thêm thời gian:**
-  - mở rộng lưới lr (SGD+momentum 0.3, Adam 1e-2);
-  - chạy mỗi thí nghiệm với 3 seed;
-  - làm lại thí nghiệm clipping với lr ×30 và c chọn theo grad norm ở lr cao;
-  - thử weighted CE / focal loss cho lớp 3 và 4;
-  - thử Adam + M-wide + cosine + 60 epoch.
+  - Chỉ có 3 seed baseline, và seed 1 (dùng cho mọi thí nghiệm) lại là seed thấp nhất, nên σ là ước lượng thô và chênh lệch "cùng seed" có thể phóng đại. Mỗi thí nghiệm chỉ chạy 1 seed.
+  - lr tốt nhất của mọi bộ tối ưu đều ở biên trên của lưới, nên có thể chưa phải lr tối ưu.
+  - Mọi cấu hình 20 epoch đều chưa hội tụ, nên so sánh thiên về "học nhanh" hơn là "điểm hội tụ tốt".
+  - Cấu hình cuối kết hợp kiểu tham lam, chưa thử M-wide/cosine cùng Adam; `hp-bs2048-lrx4` đổi 2 yếu tố cùng lúc.
+  - Phần "dự đoán" được viết dựa trên lý thuyết, sau khi pipeline đã chạy một lượt.
+- **Nếu có thêm thời gian:** mở rộng lưới lr (SGD+momentum 0.3, Adam 1e-2); chạy mỗi thí nghiệm 3 seed; làm lại clipping với lr ×30 và c chọn theo grad norm ở lr cao; thử weighted CE / focal loss cho lớp 3 và 4; thử Adam + M-wide + cosine + 60 epoch.
 
 ## 7. Phụ lục
 
