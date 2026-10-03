@@ -1,0 +1,103 @@
+# Danh sách thí nghiệm — notebook (lab.ipynb) đọc file này và chạy MỘT LƯỢT theo thứ tự:
+#   1. lr_search  -> chọn BASE_LR = lr có val macro-F1 cao nhất (chỉ dùng val)
+#   2. baseline   -> chạy base_seeds -> độ nhiễu 2σ; CLIP_C = trung vị grad_norm (TB epoch) của base-s<seed đầu>
+#   3. experiments (theo thứ tự trong list)
+#   4. final      -> chọn cấu hình cuối bằng val theo quy tắc bên dưới, chạy với final.seeds
+#
+# Mỗi thí nghiệm = baseline + các khoá ghi đè. Khoá hợp lệ (xem DEFAULT_CFG trong train.py):
+#   loss (ce|mse), optimizer (sgd|sgd_momentum|adam|adamw), lr, weight_decay, momentum, batch, epochs,
+#   hidden ([256,128] | [512,256] | [256,128,64]), dropout, init (zeros|normal|xavier|he|default),
+#   clip_norm (null|số), precision (fp32|fp16|bf16), scheduler (null|cosine), seed
+# Giá trị chuỗi bắt đầu bằng "=" là biểu thức, tính lúc chạy với các biến: BASE_LR, CLIP_C.
+# requires: cuda | bf16  -> bỏ qua thí nghiệm nếu môi trường không đáp ứng (notebook in lý do).
+# Mẫu "exp_id" trong compare/final hỗ trợ wildcard (fnmatch), "best:<mẫu>" = exp_id có val macro-F1 cao nhất trong mẫu.
+
+baseline:            # GUIDE 2b: M-base, He, CE, SGD+momentum 0.9, batch 512, 20 epoch, không dropout/clip, FP32
+  loss: ce
+  optimizer: sgd_momentum
+  momentum: 0.9
+  weight_decay: 0.0
+  batch: 512
+  epochs: 20
+  hidden: [256, 128]
+  dropout: 0.0
+  init: he
+  clip_norm: null
+  precision: fp32
+  scheduler: null
+
+lr_search:           # exp_id = lr-sgdm-<lr>, group hparam, seed 1
+  lrs: [0.003, 0.01, 0.03, 0.1]
+
+base_seeds: [1, 2, 3]   # exp_id = base-s<seed>, group baseline
+
+experiments:
+  # ---- Chủ đề 1: hàm mất mát (so bằng metric, không so loss) ----
+  - {exp_id: loss-mse,        group: loss, description: "MSE trên one-hot thay cho CE, lr baseline", loss: mse}
+  - {exp_id: loss-mse-lrx10,  group: loss, description: "MSE trên one-hot, lr x10 (gradient MSE nhỏ hơn)", loss: mse, lr: "=BASE_LR*10"}
+
+  # ---- Chủ đề 2: bộ tối ưu hoá, mỗi bộ >= 3 lr (SGD+momentum đã có ở lr_search) ----
+  - {exp_id: opt-sgd-lr0.03,      group: optimizer, description: "SGD (không momentum) lr=0.03", optimizer: sgd, lr: 0.03}
+  - {exp_id: opt-sgd-lr0.1,       group: optimizer, description: "SGD (không momentum) lr=0.1",  optimizer: sgd, lr: 0.1}
+  - {exp_id: opt-sgd-lr0.3,       group: optimizer, description: "SGD (không momentum) lr=0.3",  optimizer: sgd, lr: 0.3}
+  - {exp_id: opt-adam-lr3e-4,     group: optimizer, description: "Adam lr=3e-4", optimizer: adam, lr: 3.0e-4}
+  - {exp_id: opt-adam-lr1e-3,     group: optimizer, description: "Adam lr=1e-3", optimizer: adam, lr: 1.0e-3}
+  - {exp_id: opt-adam-lr3e-3,     group: optimizer, description: "Adam lr=3e-3", optimizer: adam, lr: 3.0e-3}
+  - {exp_id: opt-adamw-lr3e-4,    group: optimizer, description: "AdamW lr=3e-4, weight_decay=0.01", optimizer: adamw, lr: 3.0e-4, weight_decay: 0.01}
+  - {exp_id: opt-adamw-lr1e-3,    group: optimizer, description: "AdamW lr=1e-3, weight_decay=0.01", optimizer: adamw, lr: 1.0e-3, weight_decay: 0.01}
+  - {exp_id: opt-adamw-lr3e-3,    group: optimizer, description: "AdamW lr=3e-3, weight_decay=0.01", optimizer: adamw, lr: 3.0e-3, weight_decay: 0.01}
+
+  # ---- Chủ đề 3: hyper-parameter ----
+  - {exp_id: hp-bs128,        group: hparam, description: "Batch 128 (cùng lr, gấp 4 lần số bước)", batch: 128}
+  - {exp_id: hp-bs2048,       group: hparam, description: "Batch 2048 (cùng lr, 1/4 số bước)", batch: 2048}
+  - {exp_id: hp-bs2048-lrx4,  group: hparam, description: "Batch 2048 + lr x4 (quy tắc tăng lr theo lô; đổi 2 yếu tố)", batch: 2048, lr: "=BASE_LR*4"}
+  - {exp_id: hp-wide,         group: hparam, description: "M-wide 54-512-256-7", hidden: [512, 256]}
+  - {exp_id: hp-deep,         group: hparam, description: "M-deep 54-256-128-64-7", hidden: [256, 128, 64]}
+  - {exp_id: hp-wd5e-4,       group: hparam, description: "weight_decay 5e-4 (L2 trong SGD)", weight_decay: 5.0e-4}
+  - {exp_id: hp-cosine,       group: hparam, description: "Cosine lr schedule từ lr baseline về 0", scheduler: cosine}
+
+  # ---- Chủ đề 4: dropout (sau mỗi ReLU ẩn) ----
+  - {exp_id: drop-0.1, group: dropout, description: "Dropout q=0.1", dropout: 0.1}
+  - {exp_id: drop-0.3, group: dropout, description: "Dropout q=0.3", dropout: 0.3}
+  - {exp_id: drop-0.5, group: dropout, description: "Dropout q=0.5", dropout: 0.5}
+
+  # ---- Chủ đề 5: gradient clipping (c = CLIP_C lấy từ grad_norm của baseline) ----
+  - {exp_id: clip-c,             group: clipping, description: "Clip c=CLIP_C (trung vị grad_norm base-s1), lr baseline", clip_norm: "=CLIP_C"}
+  - {exp_id: noclip-lrx10,       group: clipping, description: "lr x10, KHÔNG clip (phản chứng)", lr: "=BASE_LR*10"}
+  - {exp_id: clip-c-lrx10,       group: clipping, description: "lr x10, clip c=CLIP_C", lr: "=BASE_LR*10", clip_norm: "=CLIP_C"}
+
+  # ---- Chủ đề 6: mixed precision (cần GPU CUDA) ----
+  - {exp_id: amp-fp16, group: amp, description: "FP16 autocast + GradScaler", precision: fp16, requires: cuda}
+  - {exp_id: amp-bf16, group: amp, description: "BF16 autocast, không GradScaler", precision: bf16, requires: bf16}
+
+  # ---- Chủ đề 7: khởi tạo tham số (baseline = he) ----
+  - {exp_id: init-zeros,   group: init, description: "Khởi tạo zeros thay cho He", init: zeros}
+  - {exp_id: init-normal,  group: init, description: "Khởi tạo N(0, 0.01^2) thay cho He", init: normal}
+  - {exp_id: init-xavier,  group: init, description: "Khởi tạo xavier_normal_ thay cho He", init: xavier}
+  - {exp_id: init-default, group: init, description: "Khởi tạo mặc định nn.Linear thay cho He", init: default}
+
+# Ảnh chồng figures/compare_<tên>.png
+compare:
+  lr_sgdm:   {ids: ["lr-sgdm-*"],                                  metrics: [train_loss, val_loss, val_macro_f1]}
+  baseline:  {ids: ["base-s*"],                                    metrics: [train_loss, val_loss, val_macro_f1]}
+  loss:      {ids: [base-s1, "loss-*"],                            metrics: [val_acc, val_macro_f1, grad_norm]}
+  optimizer: {ids: ["best:lr-sgdm-*", "best:opt-sgd-*", "best:opt-adam-*", "best:opt-adamw-*"], metrics: [train_loss, val_loss, val_macro_f1]}
+  batch:     {ids: [base-s1, "hp-bs*"],                            metrics: [train_loss, val_loss, val_macro_f1]}
+  hparam:    {ids: [base-s1, hp-wide, hp-deep, hp-wd5e-4, hp-cosine], metrics: [train_loss, val_loss, val_macro_f1]}
+  dropout:   {ids: [base-s1, "drop-*"],                            metrics: [train_loss, val_loss, val_macro_f1]}
+  clipping:  {ids: [base-s1, clip-c, noclip-lrx10, clip-c-lrx10],  metrics: [train_loss, val_macro_f1, grad_norm]}
+  amp:       {ids: [base-s1, "amp-*"],                             metrics: [val_loss, val_macro_f1, grad_norm]}
+  init:      {ids: [base-s1, "init-*"],                            metrics: [train_loss, val_macro_f1, grad_norm]}
+  final:     {ids: [base-s1, "final-*"],                           metrics: [train_loss, val_loss, val_macro_f1]}
+
+# Cấu hình cuối — chọn CHỈ bằng val macro-F1:
+#   optimizer/lr/weight_decay lấy từ thí nghiệm tốt nhất trong optimizer_from;
+#   mỗi mục add_if_beats_noise: lấy thí nghiệm tốt nhất trong "from", nếu vượt trung bình baseline > 2σ thì dùng các khoá "keys" của nó.
+final:
+  epochs: 40
+  seeds: [1, 2]          # file nộp = seed đầu tiên
+  optimizer_from: ["lr-sgdm-*", "opt-*"]
+  add_if_beats_noise:
+    - {from: [hp-wide, hp-deep], keys: [hidden]}
+    - {from: [hp-cosine],        keys: [scheduler]}
+    - {from: ["drop-*"],         keys: [dropout]}
